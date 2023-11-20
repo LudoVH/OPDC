@@ -45,8 +45,6 @@ PD_alternate_dx_list_c <- strsplit(PD_alternate_dx_list, ",")
 OPDC_PD_pure <- OPDC_PD_selected[!OPDC_PD_selected$ID %in% PD_alternate_dx_list_c, ]
 OPDC_PD_pure <- subset(OPDC_PD_pure, select = -c(converted_to_other, converted_to_other_diag, alternate_diag, alternate_diag_1, alternate_diag_specify))
 
-# Number of PD particpants with pure PD = 1038
-n_distinct(OPDC_PD_pure$ID)
 
 # identify IDs of PD patients with a likehood of PD < 85% or that don't meet UKBB criteria and remove them 
 OPDC_PD_unsure <- subset(OPDC_PD_pure, likelihood_PD < 85 | meets_UKBB == 0)
@@ -54,17 +52,16 @@ PD_unsure_list <- OPDC_PD_unsure[["ID"]]
 PD_unsure_list_c <- strsplit(PD_unsure_list, ",")
 OPDC_PD_pure_sure <- OPDC_PD_pure[!OPDC_PD_pure$ID %in% PD_unsure_list_c, ]
 
-# Number of PD participants with pure, sure PD = 999
-n_distinct(OPDC_PD_pure_sure$ID)
-
 
 # Condenses data to only have IDs with a corresponding DOB 
 OPDC_PD_pure_sure[OPDC_PD_pure_sure == ''] <- NA    # changes the character vector " " into NA
 OPDC_PD_pure_sure_ID <- OPDC_PD_pure_sure[!is.na(OPDC_PD_pure_sure$dob),]
 
+
 # Creates a list of OPDC_PD_pure_sure IDs
 PD_ID_list <- OPDC_PD_pure_sure[["ID"]]
 PD_ID_list_c <- strsplit(PD_ID_list, ",")
+
 
 # import biobank data and select variables of interest
 OPDC_biobank_PD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_PD_SERUM.csv")
@@ -80,8 +77,10 @@ OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
         mutate(visit = substring(visit, 7,7)) %>%
         mutate(available_samples = 5 - (bb_s_1_used + bb_s_2_used + bb_s_3_used + bb_s_4_used + bb_s_5_used))
 
+
 # Select out the IDs in the OPDC_PD_pure_sure list 
 OPDC_biobank_PD_pure_sure <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list_c, ]
+
 
 # Selects all participants with available sample
 PD_active_serum <- subset(OPDC_biobank_PD_pure_sure, available_samples > 0 & bb_s_1_status > 0)
