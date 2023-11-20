@@ -64,7 +64,7 @@ OPDC_PD_pure_sure_ID <- OPDC_PD_pure_sure[!is.na(OPDC_PD_pure_sure$dob),]
 
 # Creates a list of OPDC_PD_pure_sure IDs
 PD_ID_list <- OPDC_PD_pure_sure[["ID"]]
-PD_ID_list_c <- strsplit(ID_list, ",")
+PD_ID_list_c <- strsplit(PD_ID_list, ",")
 
 # import biobank data and select variables of interest
 OPDC_biobank_PD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_PD_SERUM.csv")
