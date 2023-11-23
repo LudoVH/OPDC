@@ -121,3 +121,72 @@ write_xlsx(PD_Olink_manifest_visit_1_latency_3.5, "~/Documents/R/OPDC/PD_Olink_m
 # selects PD samples from visit 3
 PD_Olink_manifest_visit_3 <- subset(PD_Olink_manifest, visit == 3)
 write_xlsx(PD_Olink_manifest_visit_3,"~/Documents/R/OPDC/PD_Olink_manifest_vist_3.xlsx") # save list to excel file
+
+
+
+
+## RBD LIST 
+
+# import OPDC data and select instruments of interest
+OPDC_RBD <- read.csv("~/Documents/R/OPDC/OPDCDiscoveryCohort_ALL_DATA_RBD.csv")
+
+OPDC_RBD_selected <- OPDC_RBD %>% 
+        select(subjid, dob, gender, x_1_1_rbd_symptom_date, x_1_2_rbd_diag_date, converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag,converted_subjid_2, alternate_diag, alternate_diag_1, alternate_diag_specify) %>%
+        rename(ID = subjid, date_onset = x_1_1_rbd_symptom_date, date_diagnosis = x_1_2_rbd_diag_date) %>%
+        mutate(dob = as.Date(dob)) %>%
+        mutate(gender = replace(gender, gender == 0, "male"), gender = replace(gender, gender == 1, "female"))
+
+
+# Condenses data to only have IDs with corresponding clinical data (DOB, date of diagnosis, etc)
+OPDC_RBD_selected[OPDC_RBD_selected == ''] <- NA    # changes the character vector " " into NA
+OPDC_RBD_data <- OPDC_RBD_selected[!is.na(OPDC_RBD_selected$dob),]
+OPDC_RBD_data <- subset(OPDC_RBD_data, select = -c(converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag,converted_subjid_2, alternate_diag, alternate_diag_1, alternate_diag_specify))
+
+
+# import biobank data and select variables of interest
+OPDC_biobank_RBD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_RBD_SERUM.csv")
+
+OPDC_biobank_RBD_selected <- OPDC_biobank_RBD %>%
+        select(subjid, redcap_event_name, bb_serum_date, bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw) %>% 
+        rename(ID = subjid, visit = redcap_event_name, serum_date = bb_serum_date) %>%
+        mutate(serum_date = as.Date(serum_date)) %>%
+        mutate(diagnosis = "RBD") %>%
+        relocate(diagnosis, .after = ID) %>%
+        mutate(visit = substring(visit, 7,7)) %>%
+        mutate(status = bb_s_1_status + bb_s_2_status + bb_s_3_status + bb_s_4_status + bb_s_5_status) %>%
+        mutate(status = ifelse(status == 10, "consumed", "active"))  # 2 = consumed, active = 1
+
+
+# select IDs where serum_date is missing 
+RBD_serum_date_missing <- OPDC_biobank_RBD_selected[is.na(OPDC_biobank_RBD_selected$serum_date),]
+write_xlsx(RBD_serum_date_missing, "~/Documents/R/OPDC/RBD_serum_date_missing.xlsx")
+
+# Removes IDs where no serum date is recorded 
+OPDC_biobank_RBD_selected_true <- OPDC_biobank_RBD_selected[!is.na(OPDC_biobank_RBD_selected$serum_date),]
+
+
+# creates manifest and adds on the clinical data 
+RBD_Olink_manifest <- left_join(OPDC_biobank_RBD_selected_true, OPDC_RBD_data, by = "ID")
+
+# adds on variables needed for the manifest 
+RBD_Olink_manifest$age_at_sampling <- round((RBD_Olink_manifest$dob %--% RBD_Olink_manifest$serum_date) / years(1), digit = 2)
+RBD_Olink_manifest$latency_from_RBD_sx <- round((RBD_Olink_manifest$date_onset %--% RBD_Olink_manifest$serum_date) / years(1), digit = 2)
+RBD_Olink_manifest$latency_from_RBD_diagnosis <- round((RBD_Olink_manifest$date_diagnosis %--% RBD_Olink_manifest$serum_date) / years(1), digit = 2)
+
+# rearrange columns 
+RBD_Olink_manifest <- RBD_Olink_manifest %>% 
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = latency_from_RBD_diagnosis) %>%
+        relocate(status, .after = serum_date)
+
+# change serum_date to year only 
+RBD_Olink_manifest$serum_date <- format(RBD_Olink_manifest$serum_date, "%Y")
+
+# selects RBD samples from visit 1
+RBD_Olink_manifest_visit_1 <- subset(RBD_Olink_manifest, visit == 1)
+write_xlsx(RBD_Olink_manifest_visit_1, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_1.xlsx")
+
+# selects RBD samples from visit 3
+RBD_Olink_manifest_visit_3 <- subset(RBD_Olink_manifest, visit == 3)
+write_xlsx(RBD_Olink_manifest_visit_3, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_3.xlsx")
+
+
