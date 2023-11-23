@@ -1,23 +1,12 @@
-# Load packages
-library(dplyr)
-library(janitor)
-library(tidyr)
-library(ggplot2)
-library(readxl)
-library(writexl)
-library(lubridate)
-library(data.table)
-
-
 ## PD LIST 
 
 # import OPDC data and select instruments of interest
 OPDC_PD <- read.csv("~/Documents/R/OPDC/OPDCDiscoveryCohort_ALL_DATA_PD.csv")
 
 OPDC_PD_selected <- OPDC_PD %>% 
-        select(subjid, dob, gender, x_1_onest_date, x_2_diag_date, ak_1_has_pd, ak_2_meets_criteria, converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag,converted_subjid_2, alternate_diag, alternate_diag_1, alternate_diag_specify) %>%
+        select(subjid, dob, gender, visit_date, x_1_onest_date, x_2_diag_date, ak_1_has_pd, ak_2_meets_criteria, converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag,converted_subjid_2, alternate_diag, alternate_diag_1, alternate_diag_specify) %>%
         rename(ID = subjid, date_onset = x_1_onest_date, date_diagnosis = x_2_diag_date, likelihood_PD = ak_1_has_pd, meets_UKBB = ak_2_meets_criteria, old_ID = converted_subjid_2) %>%
-        mutate(dob = as.Date(dob), date_onset = as.Date(date_onset), date_diagnosis = as.Date(date_diagnosis)) %>%
+        mutate(dob = as.Date(dob), visit_date = as.Date(visit_date), date_onset = as.Date(date_onset), date_diagnosis = as.Date(date_diagnosis)) %>%
         mutate(gender = replace(gender, gender == 0, "male"), gender = replace(gender, gender == 1, "female"))
 
 
@@ -40,34 +29,31 @@ OPDC_PD_alternate <- subset(OPDC_PD_selected, alternate_diag == 1 | converted_to
 # 13 Other (Specify below)
 
 PD_alternate_dx_list <- OPDC_PD_alternate[["ID"]]
-PD_alternate_dx_list_c <- strsplit(PD_alternate_dx_list, ",")
-OPDC_PD_pure <- OPDC_PD_selected[!OPDC_PD_selected$ID %in% PD_alternate_dx_list_c, ]
+PD_alternate_dx_list <- unique(PD_alternate_dx_list)
+OPDC_PD_pure <- OPDC_PD_selected[!OPDC_PD_selected$ID %in% PD_alternate_dx_list, ]
 OPDC_PD_pure <- subset(OPDC_PD_pure, select = -c(converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag, alternate_diag, alternate_diag_1, alternate_diag_specify, old_ID))
 
 # Number of PD particpants with pure PD = 1038
 n_distinct(OPDC_PD_pure$ID)
 
-# identify IDs of PD patients with a likehood of PD < 85% or that don't meet UKBB criteria and remove them 
-OPDC_PD_unsure <- subset(OPDC_PD_pure, likelihood_PD < 85 | meets_UKBB == 0)
-PD_unsure_list <- OPDC_PD_unsure[["ID"]]
-PD_unsure_list_c <- strsplit(PD_unsure_list, ",")
-OPDC_PD_pure_sure <- OPDC_PD_pure[!OPDC_PD_pure$ID %in% PD_unsure_list_c, ]
+# Select all rows (participant visits) that at SOME point had a likelihood score recorded
+OPDC_PD_likelihood <- OPDC_PD_pure[!is.na(OPDC_PD_pure$likelihood_PD), ]
 
-# Number of PD participants with pure, sure PD = 999
-n_distinct(OPDC_PD_pure_sure$ID)
+# Select the latest visit date for each likelihood score and then select the participants that have a likelihood score of >= 85%
+OPDC_PD_pure_sure <- OPDC_PD_likelihood %>% 
+                        group_by(ID) %>% 
+                        top_n(1, visit_date) %>%
+                        subset(likelihood_PD >= 85)
 
-
-# Condenses data to only have IDs with a corresponding DOB 
-OPDC_PD_pure_sure[OPDC_PD_pure_sure == ''] <- NA    # changes the character vector " " into NA
-OPDC_PD_pure_sure_ID <- OPDC_PD_pure_sure[!is.na(OPDC_PD_pure_sure$dob),]
-
-# Creates a list of OPDC_PD_pure_sure IDs
+# Creates an ID list of OPDC_PD_pure_sure
 PD_ID_list <- OPDC_PD_pure_sure[["ID"]]
-PD_ID_list_c <- strsplit(PD_ID_list, ",")
+PD_ID_list <- unique(PD_ID_list)
+
+# Number of PD particpants with pure, sure PD = 994
+n_distinct(OPDC_PD_pure_sure$ID)
 
 # import biobank data and select variables of interest
 OPDC_biobank_PD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_PD_SERUM.csv")
-OPDC_biobank_PD[is.na(OPDC_biobank_PD)] <- 0   # changes all NAs to 0 
 
 OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
         select(subjid, redcap_event_name, bb_serum_date, bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw) %>% 
@@ -75,24 +61,20 @@ OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
         mutate(serum_date = as.Date(serum_date)) %>%
         mutate(diagnosis = substring(visit, 13,13)) %>%
         relocate(diagnosis, .after = ID) %>%
-        mutate(diagnosis = replace(diagnosis, diagnosis == "1", "PD"), diagnosis = replace(diagnosis, diagnosis == "2", "Control"), diagnosis = replace(diagnosis, diagnosis == "3", "RBD")) %>%
+        mutate(diagnosis = replace(diagnosis, diagnosis == "1", "PD")) %>%
         mutate(visit = substring(visit, 7,7)) %>%
-        mutate(available_samples = 25 - (bb_s_1_used + bb_s_2_used + bb_s_3_used + bb_s_4_used + bb_s_5_used))
+        mutate(status = bb_s_1_status + bb_s_2_status + bb_s_3_status + bb_s_4_status + bb_s_5_status) %>%
+        mutate(status = ifelse(status == 10, "consumed", "active"))  # 2 = consumed, active = 1
 
 # Select out the IDs in the OPDC_PD_pure_sure list 
-OPDC_biobank_PD_pure_sure <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list_c, ]
-
-# Selects all participants with available sample
-PD_active_serum <- subset(OPDC_biobank_PD_pure_sure, available_samples > 0 & bb_s_1_status > 0)
-
+OPDC_biobank_PD_pure_sure <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list, ]
 
 # creates manifest and adds on the variables of interest 
-PD_Olink_manifest <- left_join(PD_active_serum, OPDC_PD_pure_sure_ID, by = "ID")
+PD_Olink_manifest <- left_join(OPDC_biobank_PD_pure_sure, OPDC_PD_pure_sure_ID, by = "ID")
 
-PD_Olink_manifest$age_at_sampling <- trunc((PD_Olink_manifest$dob %--% PD_Olink_manifest$serum_date) / years(1))
-PD_Olink_manifest$latency_from_PD_motor <- round((PD_Olink_manifest$date_onset %--% PD_Olink_manifest$serum_date) / years(1), digit = 1)
-PD_Olink_manifest$latency_from_PD_diagnosis <- trunc((PD_Olink_manifest$date_diagnosis %--% PD_Olink_manifest$serum_date) / years(1))
-
+PD_Olink_manifest$age_at_sampling <- round((PD_Olink_manifest$dob %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
+PD_Olink_manifest$latency_from_PD_motor <- round((PD_Olink_manifest$date_onset %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
+PD_Olink_manifest$latency_from_PD_diagnosis <- round((PD_Olink_manifest$date_diagnosis %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
 
 # import cluster data and rename variables 
 OPDC_PD_clusters <- read_excel("~/Documents/R/OPDC/Discovery_PD_clusters.xlsx")                              
@@ -101,18 +83,19 @@ OPDC_PD_clusters <- OPDC_PD_clusters %>% rename (ID = SubjID, cluster = clusters
 # add cluster data to manifest
 PD_Olink_manifest <- left_join(PD_Olink_manifest, OPDC_PD_clusters, by = "ID")
 
-
 # rearrange columns 
 PD_Olink_manifest <- PD_Olink_manifest %>% 
-        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = cluster) %>%
-        relocate(available_samples, .after = cluster)
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = cluster)
 
-# change serum_date to year only 
+# remove consumed samples and change serum_date to year only
+PD_Olink_manifest <- subset(PD_Olink_manifest, status == "active" | is.na(status) > 0)
 PD_Olink_manifest$serum_date <- format(PD_Olink_manifest$serum_date, "%Y")
 
-# selects PD samples with <3.5 years of diagnosis at baseline 
-PD_Olink_manifest_3.5 <- subset(PD_Olink_manifest, latency_from_PD_diagnosis < 3.5)
+# selects PD samples with <3.5 years of diagnosis at visit 1 (baseline)
+PD_Olink_manifest_visit_1_latency_3.5 <- subset(PD_Olink_manifest, visit == 1 & latency_from_PD_diagnosis < 3.5)
+write_xlsx(PD_Olink_manifest_visit_1_latency_3.5, "~/Documents/R/OPDC/PD_Olink_manifest_vist_1_3.5.xlsx") # save list to excel file
 
+# selects PD samples from visit 3
+PD_Olink_manifest_visit_3 <- subset(PD_Olink_manifest, visit == 3)
+write_xlsx(PD_Olink_manifest_visit_3,"~/Documents/R/OPDC/PD_Olink_manifest_vist_3.xlsx") # save list to excel file
 
-# save final list to excel file
-write_xlsx(PD_Olink_manifest_3.5, "~/Documents/R/OPDC/PD_Olink_manifest_3.5.xlsx")
