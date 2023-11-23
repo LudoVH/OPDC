@@ -1,3 +1,18 @@
+# Load packages
+library(dplyr)
+library(janitor)
+library(tidyr)
+library(ggplot2)
+library(readxl)
+library(writexl)
+library(lubridate)
+library(data.table)
+library(psych)
+library(tidyverse)
+library(gtsummary)
+library(gapminder)
+
+
 ## PD LIST 
 
 # import OPDC data and select instruments of interest
@@ -49,8 +64,15 @@ OPDC_PD_pure_sure <- OPDC_PD_likelihood %>%
 PD_ID_list <- OPDC_PD_pure_sure[["ID"]]
 PD_ID_list <- unique(PD_ID_list)
 
-# Number of PD particpants with pure, sure PD = 994
+# Number of PD particpants with pure, sure PD = 995
 n_distinct(OPDC_PD_pure_sure$ID)
+
+
+# Condenses OPDC data to only have IDs with a corresponding DOB and date of onset & diagnosis (used later)
+OPDC_PD_pure[OPDC_PD_pure == ''] <- NA    # changes the character vector " " into NA
+OPDC_PD_data <- OPDC_PD_pure[!is.na(OPDC_PD_pure$dob),]
+OPDC_PD_data <- subset(OPDC_PD_data, select = -c(visit_date, meets_UKBB))
+
 
 # import biobank data and select variables of interest
 OPDC_biobank_PD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_PD_SERUM.csv")
@@ -69,9 +91,10 @@ OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
 # Select out the IDs in the OPDC_PD_pure_sure list 
 OPDC_biobank_PD_pure_sure <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list, ]
 
-# creates manifest and adds on the variables of interest 
-PD_Olink_manifest <- left_join(OPDC_biobank_PD_pure_sure, OPDC_PD_pure_sure_ID, by = "ID")
+# creates manifest and adds on the OPDC clinical data
+PD_Olink_manifest <- left_join(OPDC_biobank_PD_pure_sure, OPDC_PD_data, by = "ID")
 
+# Adds on further variables required for the manifest 
 PD_Olink_manifest$age_at_sampling <- round((PD_Olink_manifest$dob %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
 PD_Olink_manifest$latency_from_PD_motor <- round((PD_Olink_manifest$date_onset %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
 PD_Olink_manifest$latency_from_PD_diagnosis <- round((PD_Olink_manifest$date_diagnosis %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
@@ -98,4 +121,3 @@ write_xlsx(PD_Olink_manifest_visit_1_latency_3.5, "~/Documents/R/OPDC/PD_Olink_m
 # selects PD samples from visit 3
 PD_Olink_manifest_visit_3 <- subset(PD_Olink_manifest, visit == 3)
 write_xlsx(PD_Olink_manifest_visit_3,"~/Documents/R/OPDC/PD_Olink_manifest_vist_3.xlsx") # save list to excel file
-
