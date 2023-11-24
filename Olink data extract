@@ -190,3 +190,82 @@ RBD_Olink_manifest_visit_3 <- subset(RBD_Olink_manifest, visit == 3)
 write_xlsx(RBD_Olink_manifest_visit_3, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_3.xlsx")
 
 
+
+
+
+## Control LIST 
+
+# import OPDC data and select instruments of interest
+OPDC_Control <- read.csv("~/Documents/R/OPDC/OPDCDiscoveryCohort_ALL_DATA_CONTROL.csv")
+
+OPDC_Control_selected <- OPDC_Control %>% 
+        select(subjid, dob, gender, converted_to_other, converted_to_other_diag, alternate_diag, alternate_diag_1, alternate_diag_specify) %>%
+        rename(ID = subjid) %>%
+        mutate(dob = as.Date(dob)) %>%
+        mutate(gender = replace(gender, gender == 0, "male"), gender = replace(gender, gender == 1, "female"))
+
+
+# identify IDs of control patients with an alternative diagnosis (1 = Yes, patient has alternate diagnosis) and remove them 
+OPDC_Control_alternate <- subset(OPDC_Control_selected, alternate_diag == 1 | converted_to_other == 1)
+Control_alternate_dx_list <- OPDC_Control_alternate[["ID"]]
+Control_alternate_dx_list <- unique(Control_alternate_dx_list)
+OPDC_Control_pure <- OPDC_Control_selected[!OPDC_Control_selected$ID %in% Control_alternate_dx_list, ]
+OPDC_Control_pure <- subset(OPDC_Control_pure, select = -c(converted_to_other, converted_to_other_diag, alternate_diag, alternate_diag_1, alternate_diag_specify))
+
+
+# Condenses data to only have IDs with a corresponding DOB and gender
+OPDC_Control_pure[OPDC_Control_pure == ''] <- NA    # changes the character vector " " into NA
+OPDC_Control_data <- OPDC_Control_pure[!is.na(OPDC_Control_pure$dob),]
+
+# Creates a list of OPDC_Control_data IDs
+Control_ID_list <- OPDC_Control_data[["ID"]]
+Control_ID_list <- unique(Control_ID_list)
+
+
+# import biobank data and select variables of interest
+OPDC_biobank_Control <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_CONTROL_SERUM.csv")
+
+OPDC_biobank_Control_selected <- OPDC_biobank_Control %>%
+        select(subjid, redcap_event_name, bb_serum_date, bb_addserum_date, bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw) %>% 
+        rename(ID = subjid, visit = redcap_event_name, serum_date = bb_serum_date) %>%
+        mutate(serum_date = as.Date(serum_date), bb_addserum_date = as.Date(bb_addserum_date)) %>%
+        mutate(diagnosis = "Control") %>%
+        relocate(diagnosis, .after = ID) %>%
+        mutate(visit = substring(visit, 7,7)) %>%
+        mutate(visit = replace(visit, visit == "_", "2")) %>%
+        mutate(status = bb_s_1_status + bb_s_2_status + bb_s_3_status + bb_s_4_status + bb_s_5_status) %>%
+        mutate(status = ifelse(status == 10, "consumed", "active"))  # 2 = consumed, active = 1
+
+# Select out the IDs in the OPDC_Control_pure list 
+OPDC_biobank_Control_pure <- OPDC_biobank_Control_selected[OPDC_biobank_Control_selected$ID %in% Control_ID_list, ]
+
+
+# creates manifest and adds on the variables of interest 
+Control_Olink_manifest <- left_join(OPDC_biobank_Control_pure, OPDC_Control_data, by = "ID")
+Control_Olink_manifest$age_at_sampling <- trunc((Control_Olink_manifest$dob %--% Control_Olink_manifest$serum_date) / years(1))
+
+# rearrange columns 
+Control_Olink_manifest <- Control_Olink_manifest %>% 
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = age_at_sampling) %>%
+        relocate(status, .after = age_at_sampling)
+
+
+# remove consumed samples
+Control_Olink_manifest_active <- subset(Control_Olink_manifest, status == "active" | is.na(status) > 0)
+
+
+# selects Control samples from visit 1 (and changing serum date to year only)
+Control_Olink_manifest_visit_1 <- subset(Control_Olink_manifest_active, visit == 1)
+Control_Olink_manifest_visit_1$serum_date <- format(Control_Olink_manifest_visit_1$serum_date, "%Y")
+Control_Olink_manifest_visit_1$bb_addserum_date <- format(Control_Olink_manifest_visit_1$bb_addserum_date, "%Y")
+
+write_xlsx(Control_Olink_manifest_visit_1, "~/Documents/R/OPDC/Control_Olink_manifest_visit_1.xlsx")
+
+
+# selects Control samples from visit 2 (and changing serum date to year only)
+Control_Olink_manifest_visit_2 <- subset(Control_Olink_manifest_active, visit == 2)
+Control_Olink_manifest_visit_2$serum_date <- format(Control_Olink_manifest_visit_2$serum_date, "%Y")
+Control_Olink_manifest_visit_2$bb_addserum_date <- format(Control_Olink_manifest_visit_2$bb_addserum_date, "%Y")
+
+write_xlsx(Control_Olink_manifest_visit_2, "~/Documents/R/OPDC/Control_Olink_manifest_visit_2.xlsx")
+
