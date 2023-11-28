@@ -1,3 +1,5 @@
+
+
 # Load packages
 library(dplyr)
 library(janitor)
@@ -27,7 +29,8 @@ OPDC_PD_selected <- OPDC_PD %>%
 
 # identify IDs of PD patients with an alternative diagnosis (1 = Yes, patient has alternate diagnosis) and remove them 
 OPDC_PD_alternate <- subset(OPDC_PD_selected, alternate_diag == 1 | converted_to_other == 1)
-
+OPDC_PD_alternate <- OPDC_PD_alternate[-which(rownames(OPDC_PD_alternate) == 6897 | rownames(OPDC_PD_alternate) == 9486 | rownames(OPDC_PD_alternate) == 14058), ] # removes patients labeled with PD Dementia 
+        
 ## Alternate diagnoses list 
 # 1 MSA (Multiple system atrophy)
 # 2 PSP (Progressive supranuclear palsy)
@@ -60,22 +63,29 @@ OPDC_PD_pure_sure <- OPDC_PD_likelihood %>%
                         top_n(1, visit_date) %>%
                         subset(likelihood_PD >= 85)
 
-# Creates an ID list of OPDC_PD_pure_sure
-PD_ID_list <- OPDC_PD_pure_sure[["ID"]]
-PD_ID_list <- unique(PD_ID_list)
 
-# Number of PD particpants with pure, sure PD = 995
-n_distinct(OPDC_PD_pure_sure$ID)
+# import list of CSF samples already tested on Olink 
+Olink_CSF_manifest <- read_xlsx("~/Documents/R/OPDC/Olink_CSF_manifest.xlsx")
+Olink_CSF_manifest <- Olink_CSF_manifest %>%
+        filter(diagnosis == "PD") %>%
+        select(ID, CSF)
+Olink_CSF_manifest_ID <- Olink_CSF_manifest[["ID"]] 
+
+
+# Creates an ID list of OPDC_PD_pure_sure
+PD_ID_list <- c(OPDC_PD_pure_sure[["ID"]], Olink_CSF_manifest_ID) # add CSF ID's to the OPDC_PD_pure_sure data frame
+PD_ID_list <- unique(PD_ID_list)
 
 
 # Condenses OPDC data to only have IDs with a corresponding DOB and date of onset & diagnosis (used later)
-OPDC_PD_pure[OPDC_PD_pure == ''] <- NA    # changes the character vector " " into NA
-OPDC_PD_data <- OPDC_PD_pure[!is.na(OPDC_PD_pure$dob),]
-OPDC_PD_data <- subset(OPDC_PD_data, select = -c(visit_date, meets_UKBB))
+OPDC_PD_selected[OPDC_PD_selected == ''] <- NA    # changes the character vector " " into NA
+OPDC_PD_data <- OPDC_PD_selected[!is.na(OPDC_PD_selected$dob),]
+OPDC_PD_data <- subset(OPDC_PD_data, select = -c(visit_date, meets_UKBB, likelihood_PD, converted_to_pd, converted_to_pd_r, converted_to_other, converted_to_other_diag, alternate_diag, alternate_diag_1, alternate_diag_specify, old_ID))
 
 
 # import biobank data and select variables of interest
 OPDC_biobank_PD <- read.csv("~/Documents/R/OPDC/OPDCBiobank_DATA_PD_SERUM.csv")
+
 
 OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
         select(subjid, redcap_event_name, bb_serum_date, bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw) %>% 
@@ -89,10 +99,10 @@ OPDC_biobank_PD_selected <- OPDC_biobank_PD %>%
         mutate(status = ifelse(status == 10, "consumed", "active"))  # 2 = consumed, active = 1
 
 # Select out the IDs in the OPDC_PD_pure_sure list 
-OPDC_biobank_PD_pure_sure <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list, ]
+OPDC_biobank_PD_pure_sure_CSF <- OPDC_biobank_PD_selected[OPDC_biobank_PD_selected$ID %in% PD_ID_list, ]
 
 # creates manifest and adds on the OPDC clinical data
-PD_Olink_manifest <- left_join(OPDC_biobank_PD_pure_sure, OPDC_PD_data, by = "ID")
+PD_Olink_manifest <- left_join(OPDC_biobank_PD_pure_sure_CSF, OPDC_PD_data, by = "ID")
 
 # Adds on further variables required for the manifest 
 PD_Olink_manifest$age_at_sampling <- round((PD_Olink_manifest$dob %--% PD_Olink_manifest$serum_date) / years(1), digit = 2)
@@ -106,23 +116,95 @@ OPDC_PD_clusters <- OPDC_PD_clusters %>% rename (ID = SubjID, cluster = clusters
 # add cluster data to manifest
 PD_Olink_manifest <- left_join(PD_Olink_manifest, OPDC_PD_clusters, by = "ID")
 
-# rearrange columns 
-PD_Olink_manifest <- PD_Olink_manifest %>% 
-        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = cluster)
 
-# remove consumed samples and change serum_date to year only
-PD_Olink_manifest <- subset(PD_Olink_manifest, status == "active" | is.na(status) > 0)
-PD_Olink_manifest$serum_date <- format(PD_Olink_manifest$serum_date, "%Y")
+# import genetic data 
+genetic_data <- read_xlsx("~/Documents/R/OPDC/OPDC_genetic_data.xlsx")
+genetic_data <- genetic_data %>% 
+                        select(ID, mutation)
+genetic_data_ID <- genetic_data[["ID"]]
+
+# add genetic data to manifest
+PD_Olink_manifest_gene <- left_join(PD_Olink_manifest, genetic_data, by = "ID")
+
+
+# add CSF list to manifest
+PD_Olink_manifest_gene_CSF <- left_join(PD_Olink_manifest_gene, Olink_CSF_manifest, by = "ID")
+
+
+# import fibroblast list 
+Fibroblast_list <- read_xlsx("~/Documents/R/OPDC/Fibroblast_list.xlsx")
+Fibroblast_list_ID <- Fibroblast_list[["ID"]]
+
+# add fibroblast list to manifest
+PD_Olink_manifest_gene_CSF_fibroblast <- left_join(PD_Olink_manifest_gene_CSF, Fibroblast_list, by = "ID")
+
+
+# rearrange columns 
+PD_Olink_manifest_final <- PD_Olink_manifest_gene_CSF_fibroblast %>% 
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = Fibroblast)
+
+# remove consumed samples or samples with no serum date and change serum_date to year only
+PD_Olink_manifest_final <- subset(PD_Olink_manifest_final, status == "active" | is.na(status) > 0)
+PD_Olink_manifest_final$serum_date <- format(PD_Olink_manifest_final$serum_date, "%Y")
+
+# selects PD samples from visit 1
+PD_Olink_manifest_visit_1 <- subset(PD_Olink_manifest_final, visit == 1)
 
 # selects PD samples with <3.5 years of diagnosis at visit 1 (baseline)
-PD_Olink_manifest_visit_1_latency_3.5 <- subset(PD_Olink_manifest, visit == 1 & latency_from_PD_diagnosis < 3.5)
-write_xlsx(PD_Olink_manifest_visit_1_latency_3.5, "~/Documents/R/OPDC/PD_Olink_manifest_vist_1_3.5.xlsx") # save list to excel file
-
-# selects PD samples from visit 3
-PD_Olink_manifest_visit_3 <- subset(PD_Olink_manifest, visit == 3)
-write_xlsx(PD_Olink_manifest_visit_3,"~/Documents/R/OPDC/PD_Olink_manifest_vist_3.xlsx") # save list to excel file
+PD_Olink_manifest_visit_1_latency_3.5 <- subset(PD_Olink_manifest_final, visit == 1 & latency_from_PD_diagnosis < 3.5)
 
 
+
+# select the 4 IDs that have had CSF Olink done but don't have a visit 1 sample, don't have enough sample, or have a latency from diagnosis >3.5 years
+Olink_CSF_manifest_add_on_samples <- PD_Olink_manifest_final %>%
+                                        filter(ID == "PDS/JR/207" | ID == "PDS/JR/261" | ID == "PDS/JR/354" | ID == "PDS/MK/024") %>%
+                                        subset(!is.na(serum_date)) %>%
+                                        group_by(ID) %>%
+                                        slice(which.min(visit))
+                                        
+
+# Add these 4 extra IDs to the visit 1 list
+PD_Olink_manifest_visit_1_final <- bind_rows(PD_Olink_manifest_visit_1_latency_3.5, Olink_CSF_manifest_add_on_samples)
+PD_Olink_manifest_visit_1_final_ID <- PD_Olink_manifest_visit_1_final[["ID"]]
+write_xlsx(PD_Olink_manifest_visit_1_final, "~/Documents/R/OPDC/PD_Olink_manifest_visit_1_final.xlsx") # save list to excel file
+
+
+
+# selects PD samples from visit 3 (that have also been selected for visit 1)
+PD_Olink_manifest_visit_3 <- PD_Olink_manifest_final %>%
+                                filter(visit == 3) %>%
+                                subset(ID %in% PD_Olink_manifest_visit_1_final_ID)
+                                
+
+## Data frames of visit 3 participants for mutations, CSF, fibroblasts, and combined
+PD_Olink_manifest_visit_3_gene <- PD_Olink_manifest_visit_3[PD_Olink_manifest_visit_3$ID %in% genetic_data_ID, ]
+PD_Olink_manifest_visit_3_CSF <- PD_Olink_manifest_visit_3[PD_Olink_manifest_visit_3$ID %in% Olink_CSF_manifest_ID, ]
+PD_Olink_manifest_visit_3_fibroblast <- PD_Olink_manifest_visit_3[PD_Olink_manifest_visit_3$ID %in% Fibroblast_list_ID, ]
+
+# creates ID list of all visit 3 participants that have had CSF, genetics or fibroblasts 
+PD_Olink_manifest_visit_3_gene_CSF_fibroblast_ID <- unique(c(PD_Olink_manifest_visit_3_gene[["ID"]], PD_Olink_manifest_visit_3_CSF[["ID"]], PD_Olink_manifest_visit_3_fibroblast[["ID"]]))
+
+# creates data frame of remaining participants that DON'T have a value for CSF, genetics of fibroblasts 
+PD_Olink_manifest_visit_3_gene_CSF_fibroblast <- PD_Olink_manifest_visit_3[PD_Olink_manifest_visit_3$ID %in% PD_Olink_manifest_visit_3_gene_CSF_fibroblast_ID, ]
+PD_Olink_manifest_visit_3_remaining <- PD_Olink_manifest_visit_3[!PD_Olink_manifest_visit_3$ID %in% PD_Olink_manifest_visit_3_gene_CSF_fibroblast_ID, ]
+
+# selects all visit 3 participants that have a cluster assignment
+PD_Olink_manifest_visit_3_remaining_cluster <- PD_Olink_manifest_visit_3_remaining[!is.na(PD_Olink_manifest_visit_3_remaining$cluster), ]
+
+
+# randomising the remaining participants, grouped by cluster 
+set.seed(10)
+PD_Olink_manifest_visit_3_remaining_randomized <- PD_Olink_manifest_visit_3_remaining_cluster %>%
+        group_by(cluster) %>%
+        sample_n(68)
+
+
+# creates final curated data frame of visit 3 participants that have: CSF, genetics, fibroblasts, cluster assignment
+PD_Olink_manifest_visit_3_curated <- bind_rows(PD_Olink_manifest_visit_3_gene_CSF_fibroblast, PD_Olink_manifest_visit_3_remaining_randomized)
+write_xlsx(PD_Olink_manifest_visit_3_curated,"~/Documents/R/OPDC/PD_Olink_manifest_visit_3_curated.xlsx") # save list to excel file
+
+
+############################################################################
 
 
 ## RBD LIST 
@@ -173,24 +255,53 @@ RBD_Olink_manifest$age_at_sampling <- round((RBD_Olink_manifest$dob %--% RBD_Oli
 RBD_Olink_manifest$latency_from_RBD_sx <- round((RBD_Olink_manifest$date_onset %--% RBD_Olink_manifest$serum_date) / years(1), digit = 2)
 RBD_Olink_manifest$latency_from_RBD_diagnosis <- round((RBD_Olink_manifest$date_diagnosis %--% RBD_Olink_manifest$serum_date) / years(1), digit = 2)
 
+
+# import genetic data 
+genetic_data <- read_xlsx("~/Documents/R/OPDC/OPDC_genetic_data.xlsx")
+genetic_data <- genetic_data %>% 
+        select(ID, mutation)
+genetic_data_ID <- genetic_data[["ID"]]
+
+# add genetic data to manifest
+RBD_Olink_manifest_gene <- left_join(RBD_Olink_manifest, genetic_data, by = "ID")
+
+
+# import list of CSF samples already tested on Olink 
+Olink_CSF_manifest <- read_xlsx("~/Documents/R/OPDC/Olink_CSF_manifest.xlsx")
+Olink_CSF_manifest <- Olink_CSF_manifest %>%
+        filter(diagnosis == "RBD") %>%
+        select(ID, CSF)
+Olink_CSF_manifest_ID <- Olink_CSF_manifest[["ID"]] 
+
+
+# add CSF samples to manifest 
+RBD_Olink_manifest_gene_CSF <- left_join(RBD_Olink_manifest_gene, Olink_CSF_manifest, by = "ID")
+
+
 # rearrange columns 
-RBD_Olink_manifest <- RBD_Olink_manifest %>% 
-        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = latency_from_RBD_diagnosis) %>%
-        relocate(status, .after = serum_date)
+RBD_Olink_manifest_final <- RBD_Olink_manifest_gene_CSF %>% 
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = CSF)
 
 # change serum_date to year only 
 RBD_Olink_manifest$serum_date <- format(RBD_Olink_manifest$serum_date, "%Y")
 
 # selects RBD samples from visit 1
-RBD_Olink_manifest_visit_1 <- subset(RBD_Olink_manifest, visit == 1)
+RBD_Olink_manifest_visit_1 <- subset(RBD_Olink_manifest_final, visit == 1)
+RBD_Olink_manifest_visit_1_ID <- RBD_Olink_manifest_visit_1[["ID"]]
 write_xlsx(RBD_Olink_manifest_visit_1, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_1.xlsx")
 
-# selects RBD samples from visit 3
-RBD_Olink_manifest_visit_3 <- subset(RBD_Olink_manifest, visit == 3)
+# selects RBD samples from visit 3 (that were also selected for visit 1)
+Additonal_row <- subset(RBD_Olink_manifest_final, ID == "PDS/PA/010" & visit == 3)
+RBD_Olink_manifest_visit_3 <- RBD_Olink_manifest_final %>%
+                                filter(visit == 3) %>%
+                                subset(ID %in% RBD_Olink_manifest_visit_1_ID) %>%
+                                bind_rows(Additonal_row)
+                                
 write_xlsx(RBD_Olink_manifest_visit_3, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_3.xlsx")
 
 
 
+#####################################################################
 
 
 ## Control LIST 
@@ -244,28 +355,61 @@ OPDC_biobank_Control_pure <- OPDC_biobank_Control_selected[OPDC_biobank_Control_
 Control_Olink_manifest <- left_join(OPDC_biobank_Control_pure, OPDC_Control_data, by = "ID")
 Control_Olink_manifest$age_at_sampling <- trunc((Control_Olink_manifest$dob %--% Control_Olink_manifest$serum_date) / years(1))
 
+
+# import genetic data 
+genetic_data <- read_xlsx("~/Documents/R/OPDC/OPDC_genetic_data.xlsx")
+genetic_data <- genetic_data %>% 
+        select(ID, mutation)
+genetic_data_ID <- genetic_data[["ID"]]
+
+# add genetic data to manifest
+Control_Olink_manifest_gene <- left_join(Control_Olink_manifest, genetic_data, by = "ID")
+
+
+# import list of CSF samples already tested on Olink 
+Olink_CSF_manifest <- read_xlsx("~/Documents/R/OPDC/Olink_CSF_manifest.xlsx")
+Olink_CSF_manifest <- Olink_CSF_manifest %>%
+        select(ID, CSF)
+Olink_CSF_manifest_ID <- Olink_CSF_manifest[["ID"]]
+
+# add CSF samples to manifest 
+Control_Olink_manifest_gene_CSF <- left_join(Control_Olink_manifest_gene, Olink_CSF_manifest, by = "ID")
+
+
 # rearrange columns 
-Control_Olink_manifest <- Control_Olink_manifest %>% 
-        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = age_at_sampling) %>%
-        relocate(status, .after = age_at_sampling)
+Control_Olink_manifest_final <- Control_Olink_manifest_gene_CSF %>% 
+        relocate(bb_s_1_status, bb_s_1_used, bb_s_1_freezethaw, bb_s_2_status, bb_s_2_used, bb_s_2_freezethaw, bb_s_3_status, bb_s_3_used, bb_s_3_freezethaw, bb_s_4_status, bb_s_4_used, bb_s_4_freezethaw,bb_s_5_status, bb_s_5_used, bb_s_5_freezethaw, .after = CSF)
 
 
-# remove consumed samples
-Control_Olink_manifest_active <- subset(Control_Olink_manifest, status == "active" | is.na(status) > 0)
+# remove consumed samples and participants missing a serum date 
+Control_Olink_manifest_final <- subset(Control_Olink_manifest_final, status == "active" | is.na(status) > 0)
 
 
 # selects Control samples from visit 1 (and changing serum date to year only)
-Control_Olink_manifest_visit_1 <- subset(Control_Olink_manifest_active, visit == 1)
+Control_Olink_manifest_visit_1 <- subset(Control_Olink_manifest_final, visit == 1)
+Control_Olink_manifest_visit_1 <- Control_Olink_manifest_visit_1[!is.na(Control_Olink_manifest_visit_1$serum_date), ]
+
+# selection of visit 1 controls 
+Control_Olink_manifest_visit_1_curated <- Control_Olink_manifest_visit_1 %>%
+                                        filter(age_at_sampling >= 55 & age_at_sampling <= 75)
+Control_Olink_manifest_visit_1_curated_ID <- Control_Olink_manifest_visit_1_curated[["ID"]]
+
+# selects all longitudinal control samples 
+Control_Olink_manifest_additional_visit <- Control_Olink_manifest_final %>%
+                                        filter(visit != 1) %>%
+                                        subset(ID %in% Control_Olink_manifest_visit_1_curated_ID) 
+
+
+## Changes serum_date to year only and writes visit 1 and additional visit to file
 Control_Olink_manifest_visit_1$serum_date <- format(Control_Olink_manifest_visit_1$serum_date, "%Y")
 Control_Olink_manifest_visit_1$bb_addserum_date <- format(Control_Olink_manifest_visit_1$bb_addserum_date, "%Y")
-
 write_xlsx(Control_Olink_manifest_visit_1, "~/Documents/R/OPDC/Control_Olink_manifest_visit_1.xlsx")
 
+Control_Olink_manifest_additional_visit$serum_date <- format(Control_Olink_manifest_additional_visit$serum_date, "%Y")
+Control_Olink_manifest_additional_visit$bb_addserum_date <- format(Control_Olink_manifest_additional_visit$bb_addserum_date, "%Y")
+write_xlsx(Control_Olink_manifest_additional_visit, "~/Documents/R/OPDC/Control_Olink_manifest_additional_visit.xlsx")
 
-# selects Control samples from visit 2 (and changing serum date to year only)
-Control_Olink_manifest_visit_2 <- subset(Control_Olink_manifest_active, visit == 2)
-Control_Olink_manifest_visit_2$serum_date <- format(Control_Olink_manifest_visit_2$serum_date, "%Y")
-Control_Olink_manifest_visit_2$bb_addserum_date <- format(Control_Olink_manifest_visit_2$bb_addserum_date, "%Y")
 
-write_xlsx(Control_Olink_manifest_visit_2, "~/Documents/R/OPDC/Control_Olink_manifest_visit_2.xlsx")
+
+
 
