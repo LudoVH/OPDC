@@ -291,7 +291,7 @@ RBD_Olink_manifest_visit_1_ID <- RBD_Olink_manifest_visit_1[["ID"]]
 write_xlsx(RBD_Olink_manifest_visit_1, "~/Documents/R/OPDC/RBD_Olink_manifest_visit_1.xlsx")
 
 # selects RBD samples from visit 3 (that were also selected for visit 1)
-Additonal_row <- subset(RBD_Olink_manifest_final, ID == "PDS/PA/010" & visit == 3)
+Additonal_row <- subset(RBD_Olink_manifest_final, ID == "PDS/PA/010" & visit == 3) # this sample ID had CSF test but not visit 1 serum done
 RBD_Olink_manifest_visit_3 <- RBD_Olink_manifest_final %>%
                                 filter(visit == 3) %>%
                                 subset(ID %in% RBD_Olink_manifest_visit_1_ID) %>%
