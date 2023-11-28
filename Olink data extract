@@ -394,7 +394,7 @@ Control_Olink_manifest_visit_1_curated <- Control_Olink_manifest_visit_1 %>%
                                         filter(age_at_sampling >= 55 & age_at_sampling <= 75)
 Control_Olink_manifest_visit_1_curated_ID <- Control_Olink_manifest_visit_1_curated[["ID"]]
 
-# selects all longitudinal control samples 
+# selects all longitudinal control samples (that also had a visit 1 sample)
 Control_Olink_manifest_additional_visit <- Control_Olink_manifest_final %>%
                                         filter(visit != 1) %>%
                                         subset(ID %in% Control_Olink_manifest_visit_1_curated_ID) 
