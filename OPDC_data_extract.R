@@ -64,7 +64,7 @@ OPDC_clinical_data_ALL_table <- OPDC_clinical_data_ALL %>%
                                 tbl_summary(include = study_arm)
 print(OPDC_clinical_data_ALL_table)
 
-################ SELECTING VARIABLES OF INTEREST #####################
+################## SELECTING VARIABLES OF INTEREST #####################
 Fixed_data <- c("subjid",
                 "study_arm",
                 "x_1_onest_date",
