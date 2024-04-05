@@ -8,7 +8,8 @@ pacman::p_load("tidyverse",
                "rio",
                "data.table",
                "gtsummary",
-               "readxl")
+               "readxl",
+               "openxlsx")
 
 OPDC_clinical_data_RAW <- read.csv("~/Documents/R/OPDC/OPDC RedCap data/OPDCDiscoveryCohort_DATA_2024-01-29_1345.csv") %>%
                         mutate(across(where(is.character), ~ na_if(.,"")))
@@ -110,20 +111,63 @@ Olink_CSF_manifest <- read.csv("~/Documents/R/OPDC/OPDC data files/olink_csf_PD_
         rename(subjid = "SubjectID", diagnosis = "ParticipantGroup") %>%
         mutate(cohort = ifelse(str_detect(subjid, "PDS"), "PD", "ALS")) %>%
         filter(cohort == "PD") %>%
-        mutate(CSF = "Yes") %>%
-        select(subjid, CSF) %>%
+        mutate(Olink_CSF = "Yes") %>%
+        select(subjid, Olink_CSF) %>%
         distinct(subjid, .keep_all = TRUE) # 3 longitudinal samples that are duplicated need to be removed 
 
 # import list of serum samples already tested on Olink 
 Olink_serum_manifest <- read_xlsx("~/Documents/R/OPDC/Serum Manifests/Entire_serum_Olink_manifest.xlsx") %>%
         select(ID, diagnosis) %>%
         rename(subjid = "ID") %>%
-        mutate(Serum = "Yes") %>%
-        select(subjid, Serum)
+        mutate(Olink_serum = "Yes") %>%
+        select(subjid, Olink_serum)
 
 # Import list of participants that have Neurochip data 
-Neurochip_IDs <- read.csv("~/Documents/R/OPDC/OPDC data files/opdc_subjid_request_age_gender_diagnosis.csv") %>%
-        rename(subjid = "OPDC_SubjID")
+Neurochip_list <- read.csv("~/Documents/R/OPDC/OPDC data files/opdc_subjid_request_age_gender_diagnosis.csv") %>%
+        rename(subjid = "OPDC_SubjID") %>%
+        mutate(Neurochip = "Yes") %>%
+        select(subjid, Neurochip)
+
+# import old genetic data 
+old_genetic_data <- read_xlsx("~/Documents/R/OPDC/OPDC data files/OPDC_genetic_data.xlsx") %>% 
+        rename(subjid = "ID") %>%
+        mutate(confirmed_mutation = ifelse(!is.na(mutation),"Yes", NA)) %>%
+        select(subjid, confirmed_mutation) 
+
+# import fibroblast list 
+Fibroblast_list <- read_xlsx("~/Documents/R/OPDC/Fibroblasts/Fibroblast_list.xlsx")  %>% 
+        rename(subjid = "ID")
+
+# add all the additional variables
+OPDC_clinical_data_ALL_additional_variables <- OPDC_clinical_data_ALL %>%
+        left_join(Olink_CSF_manifest, by = "subjid") %>%
+        left_join(Olink_serum_manifest, by = "subjid") %>%
+        left_join(OPDC_PD_clusters, by = "subjid") %>%
+        left_join(Neurochip_list, by = "subjid") %>%
+        left_join(Fibroblast_list, by = "subjid") %>%
+        left_join(old_genetic_data, by = "subjid")
+
+
+########### LIST OF TESTS DONE ##############
+
+# List of participant IDs and what has been tested
+OPDC_tested_list <- OPDC_clinical_data_ALL_additional_variables %>%
+        select(subjid, study_arm, Olink_serum, Olink_CSF, Neurochip, Fibroblast, confirmed_mutation) %>%
+        filter(Olink_serum == "Yes" | Olink_CSF == "Yes" | Neurochip == "Yes" | Fibroblast == "Yes" | confirmed_mutation == "Yes") %>%
+        distinct(subjid, .keep_all = TRUE)
+
+write.xlsx(OPDC_tested_list, "~/Documents/R/OPDC/OPDC_tested_list.xlsx")
+
+# Summary table of participants in each (ALL + additional variables)
+OPDC_tested_list_table <- OPDC_tested_list %>%
+        tbl_summary(by = study_arm,
+                include = c(Olink_serum, Olink_CSF, Neurochip, Fibroblast, confirmed_mutation),
+                missing_text = "No",
+                statistic = all_categorical() ~ "{n}")
+print(OPDC_tested_list_table)
+
+
+
 
 
 ##############################
@@ -133,9 +177,8 @@ Neurochip_IDs <- read.csv("~/Documents/R/OPDC/OPDC data files/opdc_subjid_reques
 OPDC_PD_alternate <- OPDC_clinical_data_ALL %>%
         filter(study_arm == "PD") %>%
         filter(alternate_diag == 1 | converted_to_other == 1 | converted_to_msa == 1 | converted_to_dementia == 1) %>%
-        filter(!(subjid== "PDS/JR/329" | subjid == "PDS/MK/020" | subjid == "PDS/NH/100")) %>% # removes patients labeled with PD Dementia
+        filter(!(subjid== "PDS/JR/329" | subjid == "PDS/MK/020" | subjid == "PDS/NH/100" | subjid == "PDS/JR/189")) %>% # removes patients labeled with PD Dementia
         select(subjid, study_arm, one_of(Diagnostic_status))
-
 
 
 # To find PD participants where the likelihood of PD is considered low, select all participants rated with a likelihood of PD <80%
@@ -152,14 +195,12 @@ OPDC_PD_pure_not_sure <- OPDC_clinical_data_ALL %>%
 ###########################
 
 
-OPDC_clinical_data_ALL_processed <- OPDC_clinical_data_ALL %>%
+
+OPDC_clinical_data_ALL_processed <- OPDC_clinical_data_ALL_additional_variables %>%
                                         filter(!subjid %in% OPDC_PD_alternate$subjid) %>%
                                         filter(!subjid %in% OPDC_PD_pure_not_sure) %>%
-                                        left_join(Olink_CSF_manifest, by = "subjid") %>%
-                                        left_join(Olink_serum_manifest, by = "subjid") %>%
-                                        left_join(OPDC_PD_clusters, by = "subjid") %>%
-                                        mutate(CSF = ifelse(!is.na(CSF), "Yes", "No")) %>%
-                                        mutate(Serum = ifelse(!is.na(Serum), "Yes", "No"))        
+
+
 
 
                                    
@@ -208,49 +249,30 @@ OPDC_clinical_data_relevant <- OPDC_clinical_data_ALL %>%
 
 
 
-
-
-
-
-# Ayan's data request
-OPDC_clinical_data_relevant_CSF_serum_IDs <- OPDC_clinical_data_relevant_CSF_serum_cluster %>%
+# Shahzad's data request
+Shahzad_data_request <- OPDC_clinical_data_ALL_additional_variables %>%
         select(subjid,
                gender,
                study_arm,
                visit,
                age_at_visit,
                cluster,
-               CSF,
-               Serum) %>%
+               Olink_CSF,
+               Olink_serum,
+               Neurochip) %>%
         filter(visit == 1) %>%
         distinct(subjid, .keep_all = TRUE)
-
-
-        
-Shahzad_data_request <- Neurochip_IDs %>%
-        left_join(OPDC_clinical_data_relevant_CSF_serum_IDs, by = "subjid")
-
-export(Shahzad_data_request,"Shazhad_data_request.csv")
-
 
 
 # summary table of Neurochip data
 Shahzad_data_request_table <- Shahzad_data_request %>%
         tbl_summary(by = study_arm,
-                    include = c(CSF, Serum, cluster),
+                    include = c(Olink_CSF, Olink_serum, cluster),
                     missing_text = "Missing")
 
 # Print the summary table
 print(Shahzad_data_request_table)
 
-
-missing <- Shahzad_data_request %>%
-        filter(study_arm == "PD") %>%
-        filter(is.na(Serum)) %>% 
-        filter(!subjid %in% test$subjid) %>%
-        filter(!subjid %in% OPDC_PD_alternate$subjid) %>%
-        filter(!subjid %in% OPDC_PD_not_sure)
-        
 
 
 test <- Neurochip_IDs %>%
