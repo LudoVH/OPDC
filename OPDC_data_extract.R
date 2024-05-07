@@ -11,8 +11,9 @@ pacman::p_load("tidyverse",
                "readxl",
                "openxlsx")
 
-OPDC_clinical_data_RAW <- read.csv("~/Documents/R/OPDC/OPDC RedCap data/OPDCDiscoveryCohort_DATA_2024-01-29_1345.csv") %>%
+OPDC_clinical_data_RAW <- read.csv("~/Documents/R/OPDC/OPDC RedCap data/OPDCDiscoveryCohort_DATA_2024-04-25_1653.csv") %>%
                         mutate(across(where(is.character), ~ na_if(.,"")))
+
 
 # generate a data frame of fixed variables (dob, gender, onset, diagnosis)
 fixed_variables_OPDC <- OPDC_clinical_data_RAW[!is.na(OPDC_clinical_data_RAW$dob), ] %>%
@@ -35,7 +36,7 @@ OPDC_participant_education <- OPDC_clinical_data_RAW %>%
 OPDC_clinical_data_ALL <- OPDC_clinical_data_RAW %>% 
         filter(str_detect(subjid, "PDS")) %>%
         select(-c(dob, gender, x_1_onest_date, x_2_diag_date, redcap_data_access_group, redcap_survey_identifier, i_1_school_leaving_age, i_2_1_further_ed_years, a_1_ethnic_origin, a_4_handedness)) %>%
-        rename(visit = "redcap_event_name") %>%
+        rename(visit = "redcap_event_name", MRI_done = "mri_history") %>%
         mutate(study_arm = ifelse(str_detect(visit, "arm_1"), "PD", visit)) %>%
         mutate(study_arm = ifelse(str_detect(visit, "arm_2"), "Control", study_arm)) %>%
         mutate(study_arm = ifelse(str_detect(visit, "arm_3"), "RBD", study_arm)) %>%
@@ -57,7 +58,8 @@ OPDC_clinical_data_ALL <- OPDC_clinical_data_RAW %>%
                x_1_onest_date = as.Date(x_1_onest_date), 
                x_2_diag_date = as.Date(x_2_diag_date)) %>%
         mutate(age_at_visit = round(time_length(difftime(visit_date, dob), "years"))) %>%
-        relocate(age_at_visit, .after = visit_date)
+        rename(date_onset = "x_1_onest_date", date_diagnosis = "x_2_diag_date") %>%
+        relocate(age_at_visit, date_onset, date_diagnosis, .after = dob)
 
 # Summary table of participants in each (RAW)
 OPDC_clinical_data_ALL_table <- OPDC_clinical_data_ALL %>%
@@ -65,7 +67,10 @@ OPDC_clinical_data_ALL_table <- OPDC_clinical_data_ALL %>%
                                 tbl_summary(include = study_arm)
 print(OPDC_clinical_data_ALL_table)
 
-################## SELECTING VARIABLES OF INTEREST ##################### 
+
+
+################## INSTRUMENT BUNDLES ##################### 
+
 Fixed_data <- c("subjid",
                 "study_arm",
                 "x_1_onest_date",
@@ -138,22 +143,31 @@ old_genetic_data <- read_xlsx("~/Documents/R/OPDC/OPDC data files/OPDC_genetic_d
 Fibroblast_list <- read_xlsx("~/Documents/R/OPDC/Fibroblasts/Fibroblast_list.xlsx")  %>% 
         rename(subjid = "ID")
 
+#import TMEM variant list 
+TMEM_variant_list <- read.csv("~/Documents/R/OPDC/OPDC data files/20240411-opdc_tmem_variant_info.csv") %>%
+        select(subjid, chr4.958159.C, chr4.958159.C.carriers, chr4.950422.C, chr4.950422.C.Carrier)
+
+# import Michele's convertor list 
+RBD_convertors_Michele <- read_xlsx("~/Documents/R/OPDC/OPDC data files/Michele_convertors.xlsx")
+
 # add all the additional variables
 OPDC_clinical_data_ALL_additional_variables <- OPDC_clinical_data_ALL %>%
         left_join(Olink_CSF_manifest, by = "subjid") %>%
         left_join(Olink_serum_manifest, by = "subjid") %>%
         left_join(OPDC_PD_clusters, by = "subjid") %>%
         left_join(Neurochip_list, by = "subjid") %>%
+        left_join(TMEM_variant_list, by = "subjid") %>% 
         left_join(Fibroblast_list, by = "subjid") %>%
-        left_join(old_genetic_data, by = "subjid")
+        left_join(old_genetic_data, by = "subjid") 
 
 
 ########### LIST OF TESTS DONE ##############
 
 # List of participant IDs and what has been tested
 OPDC_tested_list <- OPDC_clinical_data_ALL_additional_variables %>%
-        select(subjid, study_arm, Olink_serum, Olink_CSF, Neurochip, Fibroblast, confirmed_mutation) %>%
-        filter(Olink_serum == "Yes" | Olink_CSF == "Yes" | Neurochip == "Yes" | Fibroblast == "Yes" | confirmed_mutation == "Yes") %>%
+        select(subjid, study_arm, Olink_serum, Olink_CSF, Neurochip, Fibroblast, confirmed_mutation, MRI_done) %>%
+        mutate(MRI_done = ifelse(MRI_done == 1, "Yes", NA)) %>%
+        filter(Olink_serum == "Yes" | Olink_CSF == "Yes" | Neurochip == "Yes" | Fibroblast == "Yes" | confirmed_mutation == "Yes" | MRI_done == "Yes") %>%
         distinct(subjid, .keep_all = TRUE)
 
 write.xlsx(OPDC_tested_list, "~/Documents/R/OPDC/OPDC_tested_list.xlsx")
@@ -161,16 +175,16 @@ write.xlsx(OPDC_tested_list, "~/Documents/R/OPDC/OPDC_tested_list.xlsx")
 # Summary table of participants in each (ALL + additional variables)
 OPDC_tested_list_table <- OPDC_tested_list %>%
         tbl_summary(by = study_arm,
-                include = c(Olink_serum, Olink_CSF, Neurochip, Fibroblast, confirmed_mutation),
+                include = c(Olink_serum, Olink_CSF, MRI_done, Neurochip, Fibroblast, confirmed_mutation),
                 missing_text = "No",
-                statistic = all_categorical() ~ "{n}")
+                statistic = all_categorical() ~ "{n}") %>%
+        add_overall() %>%
+        modify_footnote()
 print(OPDC_tested_list_table)
 
 
 
-
-
-##############################
+############################## ALTERNATIVE DIAGNOSIS #############################
 
 
 # identify IDs of PD patients with an alternative diagnosis (1 = Yes, patient has alternate diagnosis) and remove them 
@@ -180,30 +194,49 @@ OPDC_PD_alternate <- OPDC_clinical_data_ALL %>%
         filter(!(subjid== "PDS/JR/329" | subjid == "PDS/MK/020" | subjid == "PDS/NH/100" | subjid == "PDS/JR/189")) %>% # removes patients labeled with PD Dementia
         select(subjid, study_arm, one_of(Diagnostic_status))
 
+## Alternate diagnoses list 
+# 1 MSA (Multiple system atrophy)
+# 2 PSP (Progressive supranuclear palsy)
+# 3 MND (Motor neuron disease)
+# 4 PAF (Pure autonomic failure)
+# 5 DLB (Dementia with Lewy bodies)
+# 6 AD (Alzheimer's disease)
+# 7 Vascular dementia
+# 8 Vascular PD
+# 9 Cerebellar ataxia
+# 10 Essential tremor
+# 11 Dystonic tremor
+# 12 Atypical Tremor
+# 13 Other (Specify below)
 
-# To find PD participants where the likelihood of PD is considered low, select all participants rated with a likelihood of PD <80%
+# To find PD participants where the likelihood of PD is considered low, select all participants rated with a likelihood of PD <90%
 OPDC_PD_pure_not_sure <- OPDC_clinical_data_ALL %>% 
         filter(study_arm == "PD") %>%
         filter(!subjid %in% OPDC_PD_alternate$subjid) %>%
         filter(!is.na(ak_1_has_pd)) %>%
         group_by(subjid) %>% 
         top_n(1, visit_date) %>%
-        subset(ak_1_has_pd < 80) %>%
+        subset(ak_1_has_pd < 90) %>%
         select(subjid, study_arm, ak_1_has_pd)
 
 
-############################
+########################### RBD PHENOCONVERTORS ###############################
+
+RBD_convertors <- OPDC_clinical_data_ALL_additional_variables %>%
+        filter(study_arm == "RBD") %>%
+        filter(converted_to_pd == 1 | converted_to_other == 1) %>%
+        select(subjid, converted_to_pd, converted_to_other, converted_to_other_diag, converted_to_dementia, converted_to_other_specify)
+
+setdiff(RBD_convertors$subjid, RBD_convertors_Michele$subjid)
+
+# Total RBD participants
+total_RBD <- OPDC_clinical_data_ALL_additional_variables %>%
+        filter(study_arm == "RBD") %>%
+        filter(!(subjid == "PDS/PA/162" | subjid == "PDS/WP/052" | subjid == "PDS/JR/543")) %>% # Not truly RBD (as already PD/DLB at visit 1) 
+        distinct(subjid)
 
 
-
-OPDC_clinical_data_ALL_processed <- OPDC_clinical_data_ALL_additional_variables %>%
-                                        filter(!subjid %in% OPDC_PD_alternate$subjid) %>%
-                                        filter(!subjid %in% OPDC_PD_pure_not_sure) %>%
-
-
-
-
-                                   
+############################ SELECTING SPECIFIC INSTRUMENTS ############################
 
 # selects all relevant data 
 OPDC_clinical_data_relevant <- OPDC_clinical_data_ALL %>%
@@ -249,75 +282,6 @@ OPDC_clinical_data_relevant <- OPDC_clinical_data_ALL %>%
 
 
 
-# Shahzad's data request
-Shahzad_data_request <- OPDC_clinical_data_ALL_additional_variables %>%
-        select(subjid,
-               gender,
-               study_arm,
-               visit,
-               age_at_visit,
-               cluster,
-               Olink_CSF,
-               Olink_serum,
-               Neurochip) %>%
-        filter(visit == 1) %>%
-        distinct(subjid, .keep_all = TRUE)
-
-
-# summary table of Neurochip data
-Shahzad_data_request_table <- Shahzad_data_request %>%
-        tbl_summary(by = study_arm,
-                    include = c(Olink_CSF, Olink_serum, cluster),
-                    missing_text = "Missing")
-
-# Print the summary table
-print(Shahzad_data_request_table)
-
-
-
-test <- Neurochip_IDs %>%
-        filter(!subjid %in% OPDC_clinical_data_relevant_CSF_serum_cluster$subjid)
-export(test, "Odd_IDs.xlsx")
-
-
-# identify IDs of PD patients with an alternative diagnosis (1 = Yes, patient has alternate diagnosis) and remove them 
-OPDC_PD_alternate <- OPDC_clinical_data_relevant %>%
-        filter(alternate_diag == 1 | converted_to_other == 1) %>%
-        filter(!(subjid == "PDS/JR/329" | subjid == "PDS/MK/020" | subjid == "PDS/NH/100")) # removes patients labeled with PD Dementia 
-        
-## Alternate diagnoses list 
-# 1 MSA (Multiple system atrophy)
-# 2 PSP (Progressive supranuclear palsy)
-# 3 MND (Motor neuron disease)
-# 4 PAF (Pure autonomic failure)
-# 5 DLB (Dementia with Lewy bodies)
-# 6 AD (Alzheimer's disease)
-# 7 Vascular dementia
-# 8 Vascular PD
-# 9 Cerebellar ataxia
-# 10 Essential tremor
-# 11 Dystonic tremor
-# 12 Atypical Tremor
-# 13 Other (Specify below)
-
-
-# Select all rows (participant visits) that at SOME point had a likelihood score recorded
-# Then select the latest visit date for each likelihood score and then select the participants that have a likelihood score of >= 85%
-OPDC_PD_pure_sure <- OPDC_clinical_data_relevant[!is.na(OPDC_clinical_data_relevant$likelihood_PD), ] %>%
-        group_by(subjid) %>% 
-        top_n(1, visit_date) %>%
-        subset(likelihood_PD >= 80)
-
-OPDC_PD_not_sure <- OPDC_clinical_data_relevant %>% 
-        filter(study_arm == "PD") %>%
-        filter(!subjid %in% OPDC_PD_pure_sure$subjid)
-
-
-# Select all sure PD, RBD and controls 
-OPDC_clinical_data_PD_RBD_Control <- OPDC_clinical_data_relevant %>%
-        filter(!subjid %in% OPDC_PD_alternate$subjid) %>%
-        filter(!subjid %in% OPDC_PD_not_sure$subjid)
-        
 
 
 
