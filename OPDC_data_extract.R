@@ -11,7 +11,7 @@ pacman::p_load("tidyverse",
                "readxl",
                "openxlsx")
 
-OPDC_clinical_data_RAW <- read.csv("~/Documents/R/OPDC/OPDC RedCap data/OPDCDiscoveryCohort_DATA_2024-04-25_1653.csv") %>%
+OPDC_clinical_data_RAW <- read.csv("~/Documents/R/OPDC/OPDC RedCap data/OPDCDiscoveryCohort_DATA_2024-05-07_2100.csv") %>%
                         mutate(across(where(is.character), ~ na_if(.,"")))
 
 
@@ -57,9 +57,7 @@ OPDC_clinical_data_ALL <- OPDC_clinical_data_RAW %>%
                visit_date = as.Date(visit_date), 
                x_1_onest_date = as.Date(x_1_onest_date), 
                x_2_diag_date = as.Date(x_2_diag_date)) %>%
-        mutate(age_at_visit = round(time_length(difftime(visit_date, dob), "years"))) %>%
-        rename(date_onset = "x_1_onest_date", date_diagnosis = "x_2_diag_date") %>%
-        relocate(age_at_visit, date_onset, date_diagnosis, .after = dob)
+        mutate(age_at_visit = time_length(difftime(visit_date, dob), "years"))
 
 # Summary table of participants in each (RAW)
 OPDC_clinical_data_ALL_table <- OPDC_clinical_data_ALL %>%
@@ -92,7 +90,8 @@ Likelihood_PD_diagnosis <- names(OPDC_clinical_data_ALL[, grep("^ak_", names(OPD
 Dementia_diagnosis <- c(names(OPDC_clinical_data_ALL[, grep("^as_", names(OPDC_clinical_data_ALL))]), "res_care_home","res_care_home_date", "nurse_care_home", "nurse_care_home_date")
  
 # OPDC instruments 
-UPDRS_instrument <- names(OPDC_clinical_data_ALL[, grep("^af", names(OPDC_clinical_data_ALL))])
+UPDRS_2_instrument <- names(OPDC_clinical_data_ALL)[grep("^h_._|^h_.._", names(OPDC_clinical_data_ALL))]
+UPDRS_3_instrument <- names(OPDC_clinical_data_ALL[, grep("^af", names(OPDC_clinical_data_ALL))])
 TGUG_FT_instrment <- names(OPDC_clinical_data_ALL[, grep("^s_", names(OPDC_clinical_data_ALL))])
 
 MOCA_TMB_instrument <- names(OPDC_clinical_data_ALL[, grep("^o_", names(OPDC_clinical_data_ALL))])
@@ -239,21 +238,21 @@ total_RBD <- OPDC_clinical_data_ALL_additional_variables %>%
 ############################ SELECTING SPECIFIC INSTRUMENTS ############################
 
 # selects all relevant data 
-OPDC_clinical_data_relevant <- OPDC_clinical_data_ALL %>%
+OPDC_clinical_data_relevant <- OPDC_clinical_data_ALL_additional_variables %>%
         filter(study_arm == "PD" | study_arm == "RBD" | study_arm == "Control" | study_arm == "PPMI Control" | study_arm == "Relative") %>%
-        select(one_of(Fixed_data),
-               one_of(Diagnostic_status),
-               one_of(Likelihood_PD_diagnosis),
-               one_of(Dementia_diagnosis),
-               one_of(UPDRS_instrument),
-               one_of(TGUG_FT_instrment),
-               one_of(MOCA_TMB_instrument),
-               one_of(Phonetic_semantic_fluency_instrument),
-               one_of(Telephone_MOCA_instrument),
-               one_of(MMSE_instrument),
-               one_of(NART_instrument),
-               one_of(IQCODE_instrument),
-               one_of(FAQ_instrument)) %>%
+        select(all_of(Fixed_data),
+               all_of(Diagnostic_status),
+               all_of(Likelihood_PD_diagnosis),
+               all_of(Dementia_diagnosis),
+               all_of(UPDRS_3_instrument),
+               all_of(TGUG_FT_instrment),
+               all_of(MOCA_TMB_instrument),
+               all_of(Phonetic_semantic_fluency_instrument),
+               all_of(Telephone_MOCA_instrument),
+               all_of(MMSE_instrument),
+               all_of(NART_instrument),
+               all_of(IQCODE_instrument),
+               all_of(FAQ_instrument)) %>%
         rename(date_onset = x_1_onest_date, 
                date_diagnosis = x_2_diag_date,
                ethnicity = a_1_ethnic_origin,
@@ -369,3 +368,14 @@ group_by(winner) %>% summarise(years = paste(year, collapse=", "))
 
 
 
+x <- Olink_CSF_manifest %>%
+        filter(subjid %in% OPDC_PD_clusters$subjid)
+
+new_cluster_info <- c("PDS/AH/018", "PDS/HH/043", "PDS/HH/057", "PDS/JR/261", "PDS/JR/558", 
+        "PDS/JR/562","PDS/JR/563", "PDS/JR/564", "PDS/JR/570", "PDS/JR/576", "PDS/MK/024")
+
+y <- Olink_CSF_manifest %>%
+        filter(subjid %in% new_cluster_info)
+
+z <- OPDC_PD_clusters %>%
+        filter(subjid %in% new_cluster_info)
