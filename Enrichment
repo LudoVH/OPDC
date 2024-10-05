@@ -1,0 +1,378 @@
+# Packages
+library(clusterProfiler)
+library(wordcloud)
+library(enrichplot)
+
+
+# import gene set data
+AnVIL::gsutil_cp(source = "gs://fc-8f96f3a4-2568-4a9e-a83c-038e22be80e2/Proteomic Analysis Pipeline/Pathway Resource/c5.go.bp.v2023.2.Hs.symbols.gmt",
+                 destination = "Ludo_olink_QC_working_dir/Gene_sets",
+                 recursive = TRUE)
+AnVIL::gsutil_cp(source = "gs://fc-8f96f3a4-2568-4a9e-a83c-038e22be80e2/Proteomic Analysis Pipeline/Pathway Resource/c5.go.cc.v2023.2.Hs.symbols.gmt",
+                 destination = "Ludo_olink_QC_working_dir/Gene_sets",
+                 recursive = TRUE)
+AnVIL::gsutil_cp(source = "gs://fc-8f96f3a4-2568-4a9e-a83c-038e22be80e2/Proteomic Analysis Pipeline/Pathway Resource/c5.go.mf.v2023.2.Hs.symbols.gmt",
+                 destination = "Ludo_olink_QC_working_dir/Gene_sets",
+                 recursive = TRUE)
+AnVIL::gsutil_cp(source = "gs://fc-8f96f3a4-2568-4a9e-a83c-038e22be80e2/Proteomic Analysis Pipeline/Pathway Resource/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt",
+                 destination = "Ludo_olink_QC_working_dir/Gene_sets",
+                 recursive = TRUE)
+
+organism = "org.Hs.eg.db" # human
+
+
+# select all significant proteins (for ORA)
+PD_vs_HC_LM_results_sig_names <- PD_vs_HC_LM_results_df %>% filter(adjusted_p_value < 0.05)
+PD_vs_HC_LM_results_sig_names <- rownames(PD_vs_HC_LM_results_sig_names)
+
+
+protein_names <- Olink_serum_data_final_PD %>% distinct(UniProt) %>% pull(UniProt)
+
+PD_vs_HC_LM_results_sig_protein_names <- Olink_serum_data_final_PD %>% 
+  filter(Assay %in% PD_vs_HC_LM_results_sig_names) %>%
+  distinct(UniProt) %>%
+  pull(UniProt)
+
+
+# positive estimate
+PD_vs_HC_LM_results_sig_pos_names <- PD_vs_HC_LM_results_df %>% filter(adjusted_p_value < 0.05 & estimate > 0)
+PD_vs_HC_LM_results_sig_pos_names <- rownames(PD_vs_HC_LM_results_sig_pos_names)
+
+# negative estimate
+PD_vs_HC_LM_results_sig_neg_names <- PD_vs_HC_LM_results_df %>% filter(adjusted_p_value < 0.05 & estimate < 0)
+PD_vs_HC_LM_results_sig_neg_names <- rownames(PD_vs_HC_LM_results_sig_neg_names)
+
+
+
+# GO Biological Process (all)
+GOBP_PD_serum_all <- enrichGO(gene = PD_vs_HC_LM_results_sig_names,
+                             universe = assay_names,
+                             OrgDb = organism, 
+                             keyType = 'SYMBOL',
+                             readable = TRUE,
+                             pool = TRUE,
+                             ont = "BP",
+                             pvalueCutoff = 0.05,
+                             pAdjustMethod = "none",
+                             qvalueCutoff = 0.1,
+                             minGSSize = 5,
+                             maxGSSize = 1000)
+
+GOBP_PD_serum_all_barplot <- barplot(GOBP_PD_serum_all, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Biological Process",
+                                          font.size = 8)
+
+GOBP_PD_serum_all_barplot
+ggsave("GOBP_PD_serum_all_barplot.png", plot = GOBP_PD_serum_all_barplot, width = 12, height = 8, dpi = 600)
+
+dotplot(GOBP_PD_serum_all)
+
+
+# GO Biological Process (positive)
+GOBP_PD_positive <- enrichGO(gene = PD_vs_HC_LM_results_sig_pos_names,
+                             universe = assay_names,
+                             OrgDb = organism, 
+                             keyType = 'SYMBOL',
+                             readable = TRUE,
+                             pool = TRUE,
+                             ont = "BP",
+                             pvalueCutoff = 0.05,
+                             pAdjustMethod = "BH",
+                             qvalueCutoff = 0.05,
+                             minGSSize = 5,
+                             maxGSSize = 1000)
+
+GOBP_PD_serum_positive_barplot <- barplot(GOBP_PD_positive, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Biological Process (upregulated)",
+                                          font.size = 8)
+
+GOBP_PD_serum_positive_barplot
+ggsave("GOBP_PD_serum_positive_barplot.png", plot = GOBP_PD_serum_positive_barplot, width = 12, height = 8, dpi = 600)
+
+# GO Molecular Function (positive)
+GOMF_PD_serum_positive <- enrichGO(gene = PD_vs_HC_LM_results_sig_pos_names,
+                                   universe = assay_names,
+                                   OrgDb = organism, 
+                                   keyType = 'SYMBOL',
+                                   readable = TRUE,
+                                   pool = TRUE,
+                                   ont = "MF",
+                                   pvalueCutoff = 0.05,
+                                   pAdjustMethod = "BH",
+                                   qvalueCutoff = 0.05,
+                                   minGSSize = 5,
+                                   maxGSSize = 1000)
+
+GOMF_PD_serum_positive_barplot <- barplot(GOMF_PD_serum_positive, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Molecular Function (upregulated)",
+                                          font.size = 8)
+
+GOMF_PD_serum_positive_barplot
+ggsave("GOMF_PD_serum_positive_barplot.png", plot = GOMF_PD_serum_positive_barplot, width = 12, height = 8, dpi = 600)
+
+# GO Cellular cellular component (positive)
+GOCC_PD_serum_positive <- enrichGO(gene = PD_vs_HC_LM_results_sig_pos_names,
+                                   universe = assay_names,
+                                   OrgDb = organism, 
+                                   keyType = 'SYMBOL',
+                                   readable = TRUE,
+                                   pool = TRUE,
+                                   ont = "CC",
+                                   pvalueCutoff = 0.05,
+                                   pAdjustMethod = "BH",
+                                   qvalueCutoff = 0.05,
+                                   minGSSize = 5,
+                                   maxGSSize = 1000)
+
+GOCC_PD_serum_positive_barplot <- barplot(GOCC_PD_serum_positive, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Cellular component (upregulated)",
+                                          font.size = 8)
+
+GOCC_PD_serum_positive_barplot
+ggsave("GOCC_PD_serum_positive_barplot.png", plot = GOCC_PD_serum_positive_barplot, width = 12, height = 8, dpi = 600)
+
+
+# KEGG (positive)
+protein_names <- Olink_serum_data_final_PD %>% distinct(UniProt) %>% pull(UniProt)
+
+PD_vs_HC_LM_results_sig_pos_protein_names <- Olink_serum_data_final_PD %>% 
+  filter(Assay %in% PD_vs_HC_LM_results_sig_pos_names) %>%
+  distinct(UniProt) %>%
+  pull(UniProt)
+
+KEGG_PD_serum_positive <- enrichKEGG(gene = PD_vs_HC_LM_results_sig_pos_protein_names,
+                                     universe = protein_names,
+                                     organism = "hsa",
+                                     keyType = "uniprot",
+                                     pvalueCutoff = 0.05,
+                                     pAdjustMethod = "BH",
+                                     minGSSize = 5,
+                                     maxGSSize = 1000,
+                                     qvalueCutoff = 0.05,
+                                     use_internal_data = FALSE)
+
+KEGG_PD_serum_positive_barplot <- barplot(KEGG_PD_serum_positive, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: KEGG (upregulated)",
+                                          font.size = 8)
+
+KEGG_PD_serum_positive_barplot
+
+
+
+
+
+
+# GO Biological Process (negative)
+GOBP_PD_serum_negative <- enrichGO(gene = PD_vs_HC_LM_results_sig_neg_names,
+                                   universe = assay_names,
+                                   OrgDb = organism, 
+                                   keyType = 'SYMBOL',
+                                   readable = TRUE,
+                                   pool = TRUE,
+                                   ont = "BP",
+                                   pvalueCutoff = 0.05,
+                                   pAdjustMethod = "BH",
+                                   qvalueCutoff = 0.05,
+                                   minGSSize = 5,
+                                   maxGSSize = 1000)
+
+GOBP_PD_serum_negative_barplot <- barplot(GOBP_PD_serum_negative, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Biological Process (downregulated)",
+                                          font.size = 8)
+
+GOBP_PD_serum_negative_barplot
+ggsave("GOBP_PD_serum_negative_barplot.png", plot = GOBP_PD_serum_negative_barplot, width = 12, height = 8, dpi = 600)
+
+GOBP_PD_serum_negative <- enrichGO(gene = PD_vs_HC_LM_results_sig_neg_names,
+                                   universe = assay_names,
+                                   OrgDb = organism, 
+                                   keyType = 'SYMBOL',
+                                   readable = TRUE,
+                                   pool = TRUE,
+                                   ont = "BP",
+                                   pvalueCutoff = 0.05,
+                                   pAdjustMethod = "BH",
+                                   qvalueCutoff = 0.05,
+                                   minGSSize = 5,
+                                   maxGSSize = 1000)
+
+GOBP_PD_serum_negative_barplot <- barplot(GOBP_PD_serum_negative, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Biological Process (downregulated)",
+                                          font.size = 8)
+
+GOBP_PD_serum_negative <- enrichGO(gene = PD_vs_HC_LM_results_sig_neg_names,
+                                   universe = assay_names,
+                                   OrgDb = organism, 
+                                   keyType = 'SYMBOL',
+                                   readable = TRUE,
+                                   pool = TRUE,
+                                   ont = "BP",
+                                   pvalueCutoff = 0.05,
+                                   pAdjustMethod = "BH",
+                                   qvalueCutoff = 0.05,
+                                   minGSSize = 5,
+                                   maxGSSize = 1000)
+
+GOBP_PD_serum_negative_barplot <- barplot(GOBP_PD_serum_negative, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: GO Biological Process (downregulated)",
+                                          font.size = 8)
+
+# KEGG (negative)
+PD_vs_HC_LM_results_sig_neg_protein_names <- Olink_serum_data_final_PD %>% 
+  filter(Assay %in% PD_vs_HC_LM_results_sig_neg_names) %>%
+  distinct(UniProt) %>%
+  pull(UniProt)
+
+KEGG_PD_serum_negative <- enrichKEGG(gene = PD_vs_HC_LM_results_sig_neg_protein_names,
+                                     universe = protein_names,
+                                     organism = "hsa",
+                                     keyType = "uniprot",
+                                     pvalueCutoff = 0.05,
+                                     pAdjustMethod = "BH",
+                                     minGSSize = 5,
+                                     maxGSSize = 1000,
+                                     qvalueCutoff = 0.05,
+                                     use_internal_data = FALSE)
+
+KEGG_PD_serum_negative_barplot <- barplot(KEGG_PD_serum_negative, 
+                                          drop = TRUE, 
+                                          showCategory = 10, 
+                                          title = "PD vs HC: KEGG (upregulated)",
+                                          font.size = 8)
+
+KEGG_PD_serum_negative_barplot
+
+
+
+# Names of significant proteins in RBD (positive estimate)
+RBD_vs_HC_serum_LM_results_sig_pos_names <- RBD_vs_HC_serum_LM_results_df %>% filter(adjusted_p_value < 0.05 & estimate > 0 )
+RBD_vs_HC_serum_LM_results_sig_pos_names <- rownames(RBD_vs_HC_serum_LM_results_sig_pos_names)
+
+# Names of significant proteins in RBD (negative estimate)
+RBD_vs_HC_serum_LM_results_sig_neg_names <- RBD_vs_HC_serum_LM_results_df %>% filter(adjusted_p_value < 0.05 & estimate < 0)
+RBD_vs_HC_serum_LM_results_sig_neg_names <- rownames(RBD_vs_HC_serum_LM_results_sig_neg_names)
+
+
+
+GOBP_RBD_serum_positive <- enrichGO(gene = RBD_vs_HC_serum_LM_results_sig_pos_names,
+                                    universe = assay_names,
+                                    OrgDb = organism, 
+                                    keyType = 'SYMBOL',
+                                    readable = TRUE,
+                                    pool = TRUE,
+                                    ont = "BP",
+                                    pvalueCutoff = 0.05,
+                                    pAdjustMethod = "BH",
+                                    qvalueCutoff = 0.05,
+                                    minGSSize = 5,
+                                    maxGSSize = 1000)
+
+barplot(GOBP_RBD_serum_positive, 
+        drop = TRUE, 
+        showCategory = 10, 
+        title = "RBD vs HC: GO Biological Pathways (downregulated)",
+        font.size = 8)
+
+
+GOBP_RBD_negative <- enrichGO(gene = RBD_vs_HC_serum_LM_results_sig_neg_names,
+                              universe = assay_names,
+                              OrgDb = organism, 
+                              keyType = 'SYMBOL',
+                              readable = TRUE,
+                              pool = TRUE,
+                              ont = "BP",
+                              pvalueCutoff = 0.05,
+                              pAdjustMethod = "BH",
+                              qvalueCutoff = 0.05,
+                              minGSSize = 5,
+                              maxGSSize = 1000)
+
+barplot(GOBP_RBD_negative, 
+        drop = TRUE, 
+        showCategory = 10, 
+        title = "RBD vs HC: GO Biological Process (downregulated)",
+        font.size = 8)
+
+
+
+
+
+gene_list <- PD_vs_HC_LM_results_df$estimate
+names(gene_list) <- PD_vs_HC_LM_results_df$assay
+gene_list <- sort(gene_list, decreasing = TRUE)
+
+
+
+
+gse <- gseGO(geneList=gene_list, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             nPerm = 10000, 
+             minGSSize = 5, 
+             maxGSSize = 1000, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = organism, 
+             pAdjustMethod = "BH")
+
+
+require(DOSE)
+dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+
+
+OlinkID <- PD_vs_HC_serum_long_v1 %>% 
+          select(OlinkID, Assay) %>%
+          distinct(OlinkID, .keep_all = TRUE)
+
+test_results <- PD_vs_HC_LM_results_df %>% 
+                rename(Assay = "assay", Adjusted_pval = "adjusted_p_value") %>%
+                left_join(OlinkID, by = "Assay")
+
+gsea_results <- olink_pathway_enrichment(data = PD_vs_HC_serum_long_v1, test_results = test_results, organism = "human", ontology = "MSigDb")
+
+ora_results_GO <- olink_pathway_enrichment(
+  data = PD_vs_HC_serum_long_v1,
+  test_results = test_results, method = "ORA", ontology = "GO")
+
+ora_results_KEGG <- olink_pathway_enrichment(
+  data = PD_vs_HC_serum_long_v1,
+  test_results = test_results, method = "ORA", ontology = "KEGG")
+
+
+
+olink_pathway_heatmap(enrich_results = gsea_results, test_results = test_results)
+
+olink_pathway_heatmap(enrich_results = ora_results_GO, test_results = test_results,
+                      method = "ORA", number_of_terms = 10)
+
+olink_pathway_heatmap(enrich_results = ora_results_KEGG, test_results = test_results,
+                      method = "ORA", number_of_terms = 10)
+
+
+
+
+GOBP_GSEA <- fgsea(GOBPGeneSets, gene_list, minSize = 5, maxSize = 1000)
+KEGG_GSEA <- fgsea(KEGGGeneSets, gene_list, minSize = 5, maxSize = 1000)
+
+
+GOBP_ORA_pos <- fora(GOBPGeneSets, PD_vs_HC_LM_results_sig_pos_names,assay_names, minSize = 5, maxSize = 1000)
+GOMF_ORA_pos <- fora(GOMFGeneSets, PD_vs_HC_LM_results_sig_pos_names,assay_names, minSize = 5, maxSize = 1000) 
+GOCC_ORA_pos <- fora(GOCCGeneSets, PD_vs_HC_LM_results_sig_pos_names,assay_names, minSize = 5, maxSize = 1000) 
+KEGG_ORA_pos <- fora(KEGGGeneSets, PD_vs_HC_LM_results_sig_pos_names,assay_names, minSize = 5, maxSize = 1000) 
+
